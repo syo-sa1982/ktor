@@ -1,11 +1,12 @@
 package io.ktor.utils.io
 
 import io.ktor.utils.io.core.*
+import io.ktor.utils.io.core.internal.*
+import io.ktor.utils.io.internal.*
+import io.ktor.utils.io.pool.*
 import kotlinx.cinterop.*
 import kotlinx.coroutines.*
-import io.ktor.utils.io.internal.*
-import io.ktor.utils.io.core.internal.ChunkBuffer
-import io.ktor.utils.io.pool.ObjectPool
+import kotlin.native.concurrent.*
 
 
 /**
@@ -54,11 +55,16 @@ actual suspend fun ByteReadChannel.copyTo(dst: ByteWriteChannel, limit: Long): L
     return (this as ByteChannelSequentialBase).copyToSequentialImpl((dst as ByteChannelSequentialBase), limit)
 }
 
-internal class ByteChannelNative(initial: IoBuffer,
-                                 autoFlush: Boolean,
-                                 pool: ObjectPool<ChunkBuffer> = ChunkBuffer.Pool) :
-    ByteChannelSequentialBase(initial, autoFlush, pool) {
+internal class ByteChannelNative(
+    initial: IoBuffer,
+    autoFlush: Boolean,
+    pool: ObjectPool<ChunkBuffer> = ChunkBuffer.Pool
+) : ByteChannelSequentialBase(initial, autoFlush, pool) {
     private var attachedJob: Job? = null
+
+    init {
+        ensureNeverFrozen()
+    }
 
     @UseExperimental(InternalCoroutinesApi::class)
     override fun attachJob(job: Job) {
@@ -180,6 +186,20 @@ internal class ByteChannelNative(initial: IoBuffer,
         return writeAvailableSuspend(src, offset, length)
     }
 
+    override fun close(cause: Throwable?): Boolean {
+        val close = super.close(cause)
+        val job = attachedJob
+        if (close && job != null && cause != null) {
+            if (cause is CancellationException) {
+                job.cancel(cause)
+            } else {
+                job.cancel("Channel is cancelled", cause)
+            }
+        }
+
+        return close
+    }
+
     private suspend fun writeAvailableSuspend(src: CPointer<ByteVar>, offset: Long, length: Long): Int {
         awaitFreeSpace()
         return writeAvailable(src, offset, length)
@@ -198,4 +218,6 @@ internal class ByteChannelNative(initial: IoBuffer,
         readable.readFully(ptr, 0, size)
         return size
     }
+
+    override fun toString(): String = "ByteChannelNative[$attachedJob, ${hashCode()}]"
 }
