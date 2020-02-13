@@ -37,4 +37,20 @@ class OkHttpEngineTests {
         val threadsCreated = totalNumberOfThreads - initialNumberOfThreads
         assertTrue { threadsCreated < 25 }
     }
+
+    @Test
+    fun preconfiguresTest() = runBlocking {
+        var preconfiguredClientCalled = false
+        val okHttpClient = OkHttpClient().newBuilder().addInterceptor(Interceptor { p0 ->
+            preconfiguredClientCalled = true
+            p0.proceed(p0.request())
+        }).build()
+
+        HttpClient(OkHttp) {
+            engine { preconfigured = okHttpClient }
+        }.use { client ->
+            client.get<String>("http://www.google.com")
+            assertTrue(preconfiguredClientCalled)
+        }
+    }
 }
