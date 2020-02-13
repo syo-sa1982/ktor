@@ -11,6 +11,14 @@ import io.ktor.util.*
  */
 @InternalAPI
 actual inline fun <reified T : Throwable> assertFailsAndContainsCause(block: () -> Unit) {
+    assertFailsWithJsSupported<T>(block)
+}
+
+/**
+ * Asserts that a [block] fails with a specific exception of type [T] being thrown.
+ */
+@InternalAPI
+actual inline fun <reified T : Throwable> assertFailsWithJsSupported(block: () -> Unit) {
     try {
         block()
         error("Expected ${T::class} exception, but it wasn't thrown")
